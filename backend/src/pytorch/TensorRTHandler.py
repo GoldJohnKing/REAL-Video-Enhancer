@@ -115,6 +115,7 @@ class TorchTensorRTHandler:
                 min_block_size=1,
                 max_aux_streams=self.max_aux_streams,
                 optimization_level=self.optimization_level,
+                #tiling_optimization_level="full",
             )
     
     @torch.inference_mode()
@@ -130,6 +131,7 @@ class TorchTensorRTHandler:
                 min_block_size=1,
                 max_aux_streams=self.max_aux_streams,
                 optimization_level=self.optimization_level,
+                #tiling_optimization_level="full",
             )
 
     def grid_sample_decomp(self, exported_program):

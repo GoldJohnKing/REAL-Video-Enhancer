@@ -1,11 +1,19 @@
 # RVE 2.3.0 pre-release
 - NOTE: Pre-releases are unstable, please use the stable build if you experience issues. 
         New features will be added to this release over time, the current changelog is not final. 
+### Added
+ - PyTorch MPS Support for MacOS (Special thanks to Gold John King on RVE Discord for testing the code)
+ - AniSD model suite.
 ### Changed
  - GUI Modifications.
  - Make torch 2.7 default, 2.6 now uses cuda 11.8
  - Improve Startup Time.
-### Added
+ - Update TensorRT to 10.10
+
+### Fixed
+ - Fixed ROCm installation not launching on linux.
+ - Fix completely black output using specific resolutions with tensorrt. 
+
 # RVE 2.2.5
  - Updates backend and python version.
  - Lock to make sure the app does not have duplicates open.

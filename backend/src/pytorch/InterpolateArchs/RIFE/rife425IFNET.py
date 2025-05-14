@@ -174,6 +174,7 @@ class IFNet(nn.Module):
     def forward(
         self, img0, img1, timestep, tenFlow_div, backwarp_tenGrid, f0, f1, scale=None
     ):
+
         warped_img0 = img0
         warped_img1 = img1
         flow = None
@@ -211,6 +212,4 @@ class IFNet(nn.Module):
             warped_img0 = self.warp(img0, flow[:, :2], tenFlow_div, backwarp_tenGrid)
             warped_img1 = self.warp(img1, flow[:, 2:4], tenFlow_div, backwarp_tenGrid)
         mask = torch.sigmoid(mask)
-        return (warped_img0 * mask + warped_img1 * (1 - mask))[
-            :, :, : self.height, : self.width
-        ]
+        return (warped_img0 * mask + warped_img1 * (1 - mask)).float()

@@ -52,6 +52,14 @@ def checkForPytorchXPU() -> bool:
     except Exception as e:
         log(str(e))
 
+def checkForPytorchMPS() -> bool:
+    try:
+        import torch
+        return torch.backends.mps.is_available()
+    except ImportError as e:
+        log(str(e))
+        return False
+
 def checkForTensorRT() -> bool:
     """
     function that checks if the pytorch backend is available
@@ -77,7 +85,8 @@ def check_bfloat16_support() -> bool:
     import torch
 
     try:
-        x = torch.tensor([1.0], dtype=torch.float16).cuda()
+        device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+        x = torch.tensor([1.0], dtype=torch.float16).to(device=device)
         return True
     except RuntimeError:
         return False

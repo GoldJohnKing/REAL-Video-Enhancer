@@ -8,6 +8,7 @@ except:
 import sys
 import os
 os.environ["PYTHONNOUSERSITE"] = "1" # Prevents python from installing packages in user site
+os.environ["PYTHONIOENCODING"] = "utf-8"
 os.environ["NVIDIA_TENSORRT_DISABLE_INTERNAL_PIP"] = "0"
 os.environ["PYTHON_JIT"] = "1" # enable python's experimental JIT for better performance in python 3.13
 from PySide6.QtCore import QLockFile
@@ -110,7 +111,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         settings = Settings()
         self.settings = settings
 
+        if self.settings.settings['rocm_override_hack']:
+            os.environ["HSA_OVERRIDE_GFX_VERSION"] = "11.0.0"
+            # os.environ["HCC_AMDGPU_TARGET"] = "gfx1100"
 
+        log(str(os.environ))
         # setup application
         FileHandler.createDirectory(TEMP_DOWNLOAD_PATH)
 
@@ -119,7 +124,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         #self.VideoPreview.setVisible(False)
 
         backendHandler = BackendHandler(self, self.settings)
-        backendHandler.enableCorrectBackends()
 
         self.renderQueue = RenderQueue(self.renderQueueListWidget)
 
@@ -162,8 +166,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
 
 
-        backendHandler.hideUninstallButtons()
-        backendHandler.showUninstallButton(self.backends)
+        
         icon_path = ":/icons/icons/logo-v2.svg"
         self.setWindowIcon(QIcon(icon_path))
         QApplication.setWindowIcon(QIcon(icon_path))
@@ -230,6 +233,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             total_pytorch_gpus=total_pytorch_gpus,
         )
         downloadDeps = DownloadDependencies(False)
+        self.downloadTab.hideUninstallButtons()
+        self.downloadTab.showUninstallButton(self.backends)
 
         # Startup Animation
         self.animationHandler = AnimationHandler()

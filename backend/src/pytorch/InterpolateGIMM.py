@@ -1,28 +1,16 @@
 import torch
-import torch.nn.functional as F
-from abc import ABCMeta, abstractmethod
-from queue import Queue
 
-from ..utils.SSIM import SSIM
-
+from .TorchUtils import TorchUtils
 # from backend.src.pytorch.InterpolateArchs.GIMM import GIMM
 from .BaseInterpolate import BaseInterpolate
-from .UpscaleTorch import UpscalePytorch
 import math
-import os
 import logging
-import gc
 import sys
 from ..utils.Util import (
-    printAndLog,
-    errorAndLog,
     warnAndLog,
     log,
 )
-from ..utils.BackendChecks import (
-    check_bfloat16_support,
-    get_gpus_torch,
-)
+
 from ..constants import HAS_SYSTEM_CUDA
 from time import sleep
 
@@ -52,8 +40,23 @@ class InterpolateGIMMTorch(BaseInterpolate):
         self.interpolateModel = modelPath
         self.width = width
         self.height = height
-        self.device = self.handleDevice(device, gpu_id=gpu_id)
-        self.dtype = self.handlePrecision(dtype)
+        _pad = 64
+        self.scale = 0.5  # GIMM uses fat amounts of vram, needs really low flow resolution for regular resolutions
+        if UHDMode:
+            self.scale = 0.25  # GIMM uses fat amounts of vram, needs really low flow resolution for UHD
+        tmp = max(_pad, int(_pad / self.scale))
+        self.pw = math.ceil(self.width / tmp) * tmp
+        self.ph = math.ceil(self.height / tmp) * tmp
+        padding = (0, self.pw - self.width, 0, self.ph - self.height)
+        self.torchUtils = TorchUtils(
+            width=width,
+            height=height,
+            hdr_mode=hdr_mode,
+            padding=padding,
+            device_type=device,
+        )
+        self.device = self.torchUtils.handle_device(device, gpu_id=gpu_id)
+        self.dtype = self.torchUtils.handle_precision(dtype)
         if ensemble:
             print("Ensemble is not implemented for GIMM, disabling", file=sys.stderr)
         if dynamicScaledOpticalFlow:
@@ -66,19 +69,16 @@ class InterpolateGIMMTorch(BaseInterpolate):
         self.ceilInterpolateFactor = ceilInterpolateFactor
         self.hdr_mode = hdr_mode # used in base interpolate class (ik inheritance is bad leave me alone)
         self.frame0 = None
-        self.scale = 0.5  # GIMM uses fat amounts of vram, needs really low flow resolution for regular resolutions
-        if UHDMode:
-            self.scale = 0.25  # GIMM uses fat amounts of vram, needs really low flow resolution for UHD
+        
         self.doEncodingOnFrame = False
-        self.initLog()
         self._load()
 
     @torch.inference_mode()
     def _load(self):
-        self.stream = torch.cuda.Stream()
-        self.prepareStream = torch.cuda.Stream()
-        self.copyStream = torch.cuda.Stream()
-        with torch.cuda.stream(self.prepareStream):  # type: ignore
+        self.stream = self.torchUtils.init_stream()
+        self.prepareStream = self.torchUtils.init_stream()
+        self.copyStream = self.torchUtils.init_stream()
+        with self.torchUtils.run_stream(self.prepareStream):  # type: ignore
             from .InterpolateArchs.GIMM.gimmvfi_r import GIMMVFI_R
 
             self.flownet = GIMMVFI_R(
@@ -90,11 +90,7 @@ class InterpolateGIMMTorch(BaseInterpolate):
             self.flownet.load_state_dict(state_dict)
             self.flownet.eval().to(device=self.device, dtype=self.dtype)
 
-            _pad = 64
-            tmp = max(_pad, int(_pad / self.scale))
-            self.pw = math.ceil(self.width / tmp) * tmp
-            self.ph = math.ceil(self.height / tmp) * tmp
-            self.padding = (0, self.pw - self.width, 0, self.ph - self.height)
+            
 
             dummyInput = torch.zeros(
                 [1, 3, self.ph, self.pw], dtype=self.dtype, device=self.device
@@ -148,7 +144,7 @@ class InterpolateGIMMTorch(BaseInterpolate):
                 warnAndLog(
                     "TensorRT is not implemented for GIMM yet, falling back to PyTorch"
                 )
-        self.prepareStream.synchronize()
+        self.torchUtils.sync_stream(self.prepareStream)  # type: ignore
 
     @torch.inference_mode()
     def __call__(
@@ -156,12 +152,11 @@ class InterpolateGIMMTorch(BaseInterpolate):
         img1,
         transition=False,
     ):  # type: ignore
-        with torch.cuda.stream(self.stream):  # type: ignore
+        with self.torchUtils.run_stream(self.stream):  # type: ignore
             if self.frame0 is None:
-                self.frame0 = self.frame_to_tensor(img1, self.prepareStream)
-                self.stream.synchronize()
+                self.frame0 = self.torchUtils.frame_to_tensor(img1, self.prepareStream, self.device, self.dtype)
                 return
-            frame1 = self.frame_to_tensor(img1, self.prepareStream)
+            frame1 = self.torchUtils.frame_to_tensor(img1, self.prepareStream, self.device, self.dtype)
             for n in range(self.ceilInterpolateFactor - 1):
                 if not transition:
                     timestep = (n + 1) * 1.0 / (self.ceilInterpolateFactor)
@@ -173,7 +168,7 @@ class InterpolateGIMMTorch(BaseInterpolate):
 
                     while self.flownet is None:
                         sleep(1)
-                    with torch.autocast(enabled=True, device_type="cuda"):
+                    with torch.autocast(enabled=True, device_type=self.device.type):
                         output = self.flownet(
                             xs, coord, timestep_tens, ds_factor=self.scale
                         )
@@ -182,13 +177,12 @@ class InterpolateGIMMTorch(BaseInterpolate):
                         # if there are nans in output, reload with float32 precision and process.... dumb fix but whatever
                         raise ValueError("Nans in output")
 
-                    output = self.tensor_to_frame(output)
+                    output = self.torchUtils.tensor_to_frame(output)
                     yield output
 
                 else:
                     yield img1
 
-            self.copyTensor(self.frame0, frame1, self.copyStream)
+            self.torchUtils.copy_tensor(self.frame0, frame1, self.copyStream)
 
-        self.stream.synchronize()
-        torch.cuda.synchronize()
+        self.torchUtils.sync_all_streams()

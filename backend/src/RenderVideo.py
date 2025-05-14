@@ -290,15 +290,15 @@ class Render:
                         
                         if self.denoiseModel:
                             interpolated_frame = self.denoiseOption(
-                                self.denoiseOption.frame_to_tensor(interpolated_frame)
+                                interpolated_frame
                             )
                         if self.compressionFixModel:
                             interpolated_frame = self.compressionFixOption(
-                                self.compressionFixOption.frame_to_tensor(interpolated_frame)
+                                interpolated_frame
                             )
                         if self.upscaleModel:
                             interpolated_frame = self.upscaleOption(
-                                self.upscaleOption.frame_to_tensor(interpolated_frame)
+                                interpolated_frame
                             )
                         if self.override_upscale_scale:
                             interpolated_frame = resize_image_bytes(interpolated_frame,
@@ -312,16 +312,16 @@ class Render:
                         
                 if self.denoiseModel:
                     frame = self.denoiseOption(
-                        self.denoiseOption.frame_to_tensor(frame)
+                        frame
                     )
                 if self.compressionFixModel:
                     frame = self.compressionFixOption(
-                        self.compressionFixOption.frame_to_tensor(frame)
+                        frame
                     )
 
                 if self.upscaleModel:
                     frame = self.upscaleOption(
-                        self.upscaleOption.frame_to_tensor(frame)
+                        frame
                     )
                 
                 
@@ -399,7 +399,7 @@ class Render:
             from .ncnn.UpscaleNCNN import UpscaleNCNN, getNCNNScale
 
             path, last_folder = os.path.split(self.upscaleModel)
-            self.upscaleModel = os.path.join(path, last_folder, last_folder)
+            self.upscaleModel = os.path.join(path, last_folder)
             self.modelScale = getNCNNScale(modelPath=self.upscaleModel) 
             self.upscaleTimes = self.modelScale if not self.override_upscale_scale else self.override_upscale_scale
             self.upscaleOption = self.upscaleNCNNObject(scale=self.upscaleTimes)

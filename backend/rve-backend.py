@@ -1,9 +1,5 @@
 import os
 
-# os variables
-os.environ["HSA_OVERRIDE_GFX_VERSION"] = "10.3.0"
-# os.environ["HCC_AMDGPU_TARGET"] = "gfx1100"
-
 import argparse
 import sys
 from src.version import __version__
@@ -46,6 +42,7 @@ class HandleApplication:
             checkForPytorchCUDA,
             checkForPytorchROCM,
             checkForPytorchXPU,
+            checkForPytorchMPS,
             checkForNCNN,
             checkForTensorRT,
             check_bfloat16_support,
@@ -104,6 +101,16 @@ class HandleApplication:
             for i, gpu in enumerate(pyTorchGpus):
                 printMSG += f"PyTorch GPU {i}: {gpu}\n"
 
+        if checkForPytorchMPS():
+            availableBackends.append("pytorch (mps)")
+            import torch
+
+            printMSG += f"PyTorch Version: {torch.__version__}\n"
+            half_prec_supp = check_bfloat16_support()
+            pyTorchGpus = get_gpus_torch()
+            for i, gpu in enumerate(pyTorchGpus):
+                printMSG += f"PyTorch GPU {i}: {gpu}\n"
+
         if checkForNCNN():
             availableBackends.append("ncnn")
             ncnnGpus = get_gpus_ncnn()
@@ -136,7 +143,7 @@ class HandleApplication:
             compressionFixModel=self.args.compression_fix_model,
             tile_size=self.args.tilesize,
             # backend settings
-            device="default",
+            device=self.args.device,
             backend=self.args.backend,
             precision=self.args.precision,
             pytorch_gpu_id=self.args.pytorch_gpu_id,
@@ -365,6 +372,18 @@ class HandleApplication:
             help="upscale images in smaller chunks, default is the size of the input video",
             default=0,
             type=int,
+        )
+        parser.add_argument(
+            "--device",
+            help="Device used for inference. CUDA is used for any gpu device (cuda, rocm, xpu), MPS is for MacOS, and CPU is for well, cpu",
+            default="auto",
+            choices=[
+                "auto",
+                "cuda",
+                "mps",
+                "cpu"
+            ]
+            
         )
         parser.add_argument(
             "--pytorch_gpu_id",

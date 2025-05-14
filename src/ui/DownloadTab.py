@@ -9,9 +9,14 @@ from ..ModelHandler import (
     ncnnUpscaleModels,
     pytorchUpscaleModels,
 )
+import os
+
+
+from PySide6.QtWidgets import QMessageBox
+
 from PySide6.QtWidgets import QMessageBox
 from .Updater import ApplicationUpdater
-from ..constants import IS_FLATPAK, MODELS_PATH, PLATFORM, CWD, USE_LOCAL_BACKEND, HOME_PATH
+from ..constants import IS_FLATPAK, MODELS_PATH, PLATFORM, CWD, USE_LOCAL_BACKEND, HOME_PATH, BACKEND_PATH, PYTHON_EXECUTABLE_PATH, PYTHON_DIRECTORY, PLATFORM, IS_FLATPAK, CWD, CPU_ARCH
 from ..BuiltInTorchVersions import TorchVersion
 from ..Util import FileHandler
 
@@ -49,9 +54,34 @@ class DownloadTab:
         self.backends = backends
         self.applicationUpdater = ApplicationUpdater()
 
+        if FileHandler.getFreeSpace() < 7:
+            self.parent.downloadTorchBtn.setEnabled(False)
+        if FileHandler.getFreeSpace() < 7:
+            self.parent.downloadTensorRTBtn.setEnabled(False)
+
+        # disable as it is not complete
+        try:
+            self.parent.downloadDirectMLBtn.setEnabled(False)
+            if PLATFORM != "win32":
+                self.parent.downloadDirectMLBtn.setEnabled(False)
+        except Exception as e:
+            print(e)
+
+
         # set this all to not visible, as scrapping the idea for now.
         if PLATFORM != "linux":
             disable_combobox_item_by_text(self.parent.pytorch_backend, "ROCm (Linux Only)")
+        
+        if PLATFORM == "darwin":
+            if CPU_ARCH == "arm64":
+                self.parent.pytorch_backend.clear()
+                self.parent.pytorch_backend.addItems(
+                    ["MPS (Apple Silicon)"]
+                )
+                self.parent.pytorch_backend.setCurrentText("MPS (Apple Silicon)")
+                self.parent.pytorch_backend.setEnabled(False)
+                self.parent.downloadTorchBtn.setEnabled(True)
+            self.parent.downloadTensorRTBtn.setEnabled(False)
         if IS_FLATPAK or USE_LOCAL_BACKEND:
             self.parent.uninstallAppBtn.setDisabled(True)
         else:
@@ -59,7 +89,7 @@ class DownloadTab:
 
         self.parent.ApplicationUpdateContainer.setVisible(False)
         self.QButtonConnect()
-
+    
     def QButtonConnect(self):
         self.parent.downloadNCNNBtn.clicked.connect(lambda: self.download("ncnn", True))
         self.parent.downloadTorchBtn.clicked.connect(
@@ -115,6 +145,42 @@ class DownloadTab:
             os._exit(0)
         
 
+        
+    def hideUninstallButtons(self):
+        self.parent.uninstallTorchBtn.setVisible(False)
+        self.parent.uninstallNCNNBtn.setVisible(False)
+        self.parent.uninstallTensorRTBtn.setVisible(False)
+        self.parent.uninstallDirectMLBtn.setVisible(False)
+
+    def showUninstallButton(self, backends):
+        if "pytorch (cuda)" in backends:
+            self.parent.downloadTorchBtn.setVisible(False)
+            self.parent.uninstallTorchBtn.setVisible(True)
+        if "pytorch (rocm)" in backends:
+            self.parent.downloadTorchBtn.setVisible(False)
+            self.parent.uninstallTorchBtn.setVisible(True)
+        if "pytorch (xpu)" in backends:
+            self.parent.downloadTorchBtn.setVisible(False)
+            self.parent.uninstallTorchBtn.setVisible(True)
+        if "pytorch (mps)" in backends:
+            self.parent.downloadTorchBtn.setVisible(False)
+            self.parent.uninstallTorchBtn.setVisible(True)
+        if "ncnn" in backends:
+            self.parent.downloadNCNNBtn.setVisible(False)
+            self.parent.uninstallNCNNBtn.setVisible(True)
+        if "tensorrt" in backends:
+            self.parent.downloadTensorRTBtn.setVisible(False)
+            self.parent.uninstallTensorRTBtn.setVisible(True)
+
+        # disable as it is not complete
+        try:
+            self.parent.downloadDirectMLBtn.setEnabled(False)
+            if PLATFORM != "win32":
+                self.parent.downloadDirectMLBtn.setEnabled(False)
+        except Exception as e:
+            print(e)
+
+
     def download(self, dep, install: bool = True):
         """
         Downloads the specified dependency.
@@ -124,17 +190,18 @@ class DownloadTab:
         - None
         """
         if install and ("torch" in dep.lower() or "tensorrt" in dep.lower()):
-            reply = QMessageBox.question(
-                self.parent,
-                "",
-                "Old GTX cards require torch version 2.6.0.\nContinue installation?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,  # type: ignore
-            )
-            if reply == QMessageBox.Yes:  # type: ignore
-                pass
-            else:
-                return
+            if PLATFORM != "darwin":
+                reply = QMessageBox.question(
+                    self.parent,
+                    "",
+                    "Old GTX cards require torch version 2.6.0.\nContinue installation?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,  # type: ignore
+                )
+                if reply == QMessageBox.Yes:  # type: ignore
+                    pass
+                else:
+                    return
         pytorch_ver:TorchVersion|None = None
         current_pytorch_version = self.parent.pytorch_version.currentText().split()[0]
         current_pytorch_backend = self.parent.pytorch_backend.currentText().split()[0].lower()
@@ -153,8 +220,10 @@ class DownloadTab:
             pytorch_backend = pytorch_ver.cuda_version
         elif current_pytorch_backend == "rocm":
             pytorch_backend = pytorch_ver.rocm_version
-        else:
+        elif current_pytorch_backend == "xpu":
             pytorch_backend = pytorch_ver.xpu_version
+        elif current_pytorch_backend == "mps":
+            pytorch_backend = pytorch_ver.mps_version
         
         if NetworkCheckPopup(
             "https://pypi.org/"

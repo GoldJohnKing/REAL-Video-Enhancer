@@ -15,6 +15,15 @@ class SettingsTab:
         total_ncnn_gpus,
     ):
         self.parent = parent
+        self.ffmpeg_settings_dict = {
+            "encoder": self.parent.encoder,
+            "audio_encoder": self.parent.audio_encoder,
+            "subtitle_encoder": self.parent.subtitle_encoder,
+            "audio_bitrate": self.parent.audio_bitrate,
+            "video_pixel_format": self.parent.video_pixel_format,
+            "video_quality": self.parent.video_quality,
+
+        }
         self.settings = Settings()
 
         self.connectWriteSettings()
@@ -28,23 +37,16 @@ class SettingsTab:
         self.parent.pytorch_gpu_id.setMaximum(total_pytorch_gpus)
         self.parent.ncnn_gpu_id.setMaximum(total_ncnn_gpus)
         self.parent.openRVEFolderBtn.clicked.connect(lambda:open_folder(currentDirectory()))
+        
+        self.updateFFMpegCommand()
     
     def updateFFMpegCommand(self):
         """
         Updates the FFMpegCommand object with the current settings.
         """
-        self.settings.writeSetting(
-                "encoder", self.parent.encoder.currentText()
-        )
-        self.settings.writeSetting(
-                "audio_encoder", self.parent.audio_encoder.currentText()
-        )
-        self.settings.writeSetting(
-                "subtitle_encoder", self.parent.subtitle_encoder.currentText()
-        )
-        self.settings.writeSetting(
-                "audio_bitrate", self.parent.audio_bitrate.currentText()
-        )
+        for key, value in self.ffmpeg_settings_dict.items():
+            self.settings.writeSetting(key, value.currentText())
+        
         pixel_fmt = self.settings.settings['video_pixel_format']
         hdr_mode = self.parent.hdrModeCheckBox.isChecked() 
         if hdr_mode:
@@ -56,7 +58,7 @@ class SettingsTab:
 
             if pixel_fmt in pxfmtdict:
                 pixel_fmt = pxfmtdict[pixel_fmt]
-
+        
         command = FFMpegCommand(
         self.settings.settings['encoder'].replace(' (experimental)', '').replace(' (40 series and up)', ''),
         self.settings.settings['video_quality'],
@@ -90,10 +92,16 @@ class SettingsTab:
         self.parent.subtitle_encoder.currentIndexChanged.connect(
             self.updateFFMpegCommand
         )
+        self.parent.video_pixel_format.currentIndexChanged.connect(
+            self.updateFFMpegCommand
+        )
         self.parent.audio_bitrate.currentIndexChanged.connect(
             self.updateFFMpegCommand
         )
         self.parent.hdrModeCheckBox.stateChanged.connect(
+            self.updateFFMpegCommand
+        )
+        self.parent.video_quality.currentIndexChanged.connect(
             self.updateFFMpegCommand
         )
         self.parent.preview_enabled.stateChanged.connect(
@@ -180,6 +188,12 @@ class SettingsTab:
         self.parent.pytorch_backend.currentIndexChanged.connect(
             lambda: self.settings.writeSetting(
                 "pytorch_backend", self.parent.pytorch_backend.currentText()
+            )
+        )
+        self.parent.rocm_override_hack.stateChanged.connect(
+            lambda: self.settings.writeSetting(
+                "rocm_override_hack",
+                "True" if self.parent.rocm_override_hack.isChecked() else "False"
             )
         )
 
@@ -270,6 +284,9 @@ class SettingsTab:
         self.parent.pytorch_backend.setCurrentText(
             self.settings.settings["pytorch_backend"]
         )
+        self.parent.rocm_override_hack.setChecked(
+            self.settings.settings["rocm_override_hack"] == "True"
+        )
 
 
     def selectOutputFolder(self):
@@ -321,7 +338,8 @@ class Settings:
             "video_container": "mkv",
             "video_pixel_format": "yuv420p",
             "pytorch_version": "2.7.0",
-            "pytorch_backend": "CUDA"
+            "pytorch_backend": "CUDA",
+            "rocm_override_hack": "True",
         }
         self.allowedSettings = {
             "precision": ("auto", "float32", "float16"),
@@ -372,6 +390,7 @@ class Settings:
             ),
             "pytorch_version": "ANY",
             "pytorch_backend": "ANY",
+            "rocm_override_hack": ("True", "False")
         }
         self.settings = self.defaultSettings.copy()
         if not os.path.isfile(self.settingsFile):
